@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no"/>
+    <link rel="stylesheet" href="https://js.arcgis.com/3.26/dijit/themes/claro/claro.css">
+    <link rel="stylesheet" href="https://js.arcgis.com/3.26/esri/css/esri.css">
+    <!-- Load Leaflet from CDN -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Load Esri Leaflet from CDN -->
+    <script src="https://unpkg.com/esri-leaflet/dist/esri-leaflet.js"></script>
+    <style>
+      html, body, #map {
+        margin:0; padding:0;  width : 100%; height : 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"><div id=customMapBox></div></div>
+    <script>
+
+    //saako setView:n korvattua bbox:lla niin että saadaan gtk:n "bbox koordinaatit suoraan"
+    /*var corner1 = L.latLng(40.712, -74.227),
+    corner2 = L.latLng(40.774, -74.125),
+    bounds = L.latLngBounds(corner1, corner2);*/
+    let Colors = {};
+    Colors.names = {
+      aqua: "#00ffff",
+      azure: "#f0ffff",
+      beige: "#f5f5dc",
+      black: "#000000",
+      blue: "#0000ff",
+      brown: "#a52a2a",
+      cyan: "#00ffff",
+      darkblue: "#00008b",
+      darkcyan: "#008b8b",
+      darkgrey: "#a9a9a9",
+      darkgreen: "#006400",
+      darkkhaki: "#bdb76b",
+      darkmagenta: "#8b008b",
+      darkolivegreen: "#556b2f",
+      darkorange: "#ff8c00",
+      darkorchid: "#9932cc",
+      darkred: "#8b0000",
+      darksalmon: "#e9967a",
+      darkviolet: "#9400d3",
+      fuchsia: "#ff00ff",
+      gold: "#ffd700",
+      green: "#008000",
+      indigo: "#4b0082",
+      khaki: "#f0e68c",
+      lightblue: "#add8e6",
+      lightcyan: "#e0ffff",
+      lightgreen: "#90ee90",
+      lightgrey: "#d3d3d3",
+      lightpink: "#ffb6c1",
+      lightyellow: "#ffffe0",
+      lime: "#00ff00",
+      magenta: "#ff00ff",
+      maroon: "#800000",
+      navy: "#000080",
+      olive: "#808000",
+      orange: "#ffa500",
+      pink: "#ffc0cb",
+      purple: "#800080",
+      violet: "#800080",
+      red: "#ff0000",
+      silver: "#c0c0c0",
+      white: "#ffffff",
+      yellow: "#ffff00"
+    };
+    let gtkLayerNames = [
+      "kaivospiirihakemukset",
+      "kaivospiirit",
+      "kaivospiirit_karenssissa",
+      "kaivoslupahakemukset",
+      "kaivosalueet_voimassa",
+      "valtaushakemukset",
+      "valtaukset",
+      "valtaukset_karenssissa",
+      "malminetsintalupahakemukset",
+      "malminetsintaluvat_karenssissa",
+      "varausilmoitushakemukset",
+      "varausilmoitukset_karenssissa",
+      "varausilmoitukset",
+      "kullanhuuhdontaluvat",
+      "kullanhuuhdontalupahakemukset",
+      "malminetsintaalueet",
+    ]
+
+    getLayerColor = (context,layerId,Colors)=>{
+      let keys = []
+      for(let color in Colors.names){
+        keys.push(color);
+      }
+      return keys[layerId]
+    }
+
+    getLayerInfo = (feature) =>{
+      //console.log(feature)
+      return JSON.stringify(feature)
+    }
+
+    // SOME VARIABLES
+    var gDisplayLayersInfo = []
+    var gtkOverlays = {}
+
+    // MAP
+    var map = L.map('map').setView([68.7512 , 25.6189], 7);
+    var ArcGisMap = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Specialty/DeLorme_World_Base_Map/MapServer');
+    var OpenStreetMap = L.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+    var Esri_WorldImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+	     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+    });
+    var Esri_WorldPhysical = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Physical_Map/MapServer/tile/{z}/{y}/{x}', {
+ 	     attribution: 'Tiles &copy; Esri &mdash; Source: US National Park Service',
+ 	     maxZoom: 8
+    });
+
+    var baseLayers = {
+    //"Mapbox": mapbox,
+    "OpenStreetMap": OpenStreetMap,
+    "ArcGIS" : ArcGisMap,
+    'World imagery' :Esri_WorldImagery,
+    'World physical': Esri_WorldPhysical
+    };
+var layer
+    // Loop N amount of GTK resourceIds from 0-15
+
+    for(let resourceId=0; resourceId<1;resourceId++){
+      let color = getLayerColor('GTK',resourceId,Colors)
+      let layerName =""
+    try{
+      fetch("http://gtkdata.gtk.fi/arcgis/rest/services/Tukes/TukesWMS/MapServer/"+resourceId+"/?f=pjson")
+      //fetch("https://maps.nccs.nasa.gov/server/rest/services/gliht/201703_PuertoRico_test/MapServer/16")
+      .then((response) => response.text())
+      .then((responseText) => {
+        layerJSON = JSON.parse(responseText)
+          //joko ei tulla tänne uudelleen tai leaflet hajoaa ennen tätä
+          console.log(JSON.stringify(layerJSON.name))
+          layerName = layerJSON.name
+
+      })
+      .catch((error) => {
+          console.error(error);
+      });
+    }
+    catch(e){
+        console.log(e)
+      }
+      //var promise = $.getJSON("http://gtkdata.gtk.fi/arcgis/rest/services/Tukes/TukesWMS/MapServer/"+resourceId+"/?f=pjson");
+      //console.log(promise)
+      try{
+       layer = L.esri.featureLayer({
+         //url: "https://maps.nccs.nasa.gov/server/rest/services/gliht/201703_PuertoRico_test/MapServer/16",
+          url: "http://gtkdata.gtk.fi/arcgis/rest/services/Tukes/TukesWMS/MapServer/"+resourceId+"/?f=pjson",
+          //name: "http://gtkdata.gtk.fi/arcgis/rest/services/Tukes/TukesWMS/MapServer/"+resourceId+"/?f=pjson",
+          style: function () {
+            return { color: color, weight: 1 };
+          },
+          addFeature : addFeature,
+          //cacheLayers : false,
+          //override the default function
+          onEachFeature: overlayOnEachFeature,
+
+          //Registers an event handler on the instance.
+          //Call this method to hook an event with a listener
+          //Does the same later by bindin layer.on('load', iterateFeatures,);
+          onLoad:iterateFeatures,
+        });
+      }catch(e){console.log(e)}
+        /*
+        var layerPromise = new promise(function(resolve,reject{
+          var layer = L.esri.featureLayer({
+            url: "http://gtkdata.gtk.fi/arcgis/rest/services/Tukes/TukesWMS/MapServer/"+resourceId+"/?f=pjson",
+            //name: "http://gtkdata.gtk.fi/arcgis/rest/services/Tukes/TukesWMS/MapServer/"+resourceId+"/?f=pjson",
+            style: function () {
+              return { color: color, weight: 1 };
+            },
+          });
+          if(layer){
+          }
+        }))*/
+        layer.metadata(function(error, metadata){
+          //metadata about a map WMS layer loads after API request. could update DOM straight
+          //let currentLayer.name = metadata.name
+        });
+        function iterateFeatures () {
+          layer.eachFeature(function(feature) {
+            console.log(getFeatureType(feature));
+
+          });
+        }
+        function addFeature(feature,layer) {
+          console.log('addFeature'+feature)
+        }
+        //custom function
+        function overlayOnEachFeature(feature, layer){
+          layer.on({
+              //load: iterateFeatures, // should this work here?
+              // when a overlay is on display
+              add: function (e) {
+                  // get information from the current layer
+                  var layerInfo = getLayerInfo(feature.properties);
+                  // add the information to a global variable
+                  gDisplayLayersInfo.push('<br>' + layerInfo);
+                  //console.log(gDisplayLayersInfo)
+                  //document.getElementById("customMapBox")
+                  //console.log(document.getElementById("customMapBox"))
+              },
+              remove: function (e) {
+
+                console.log("removing"+feature.properties)
+                  var layerInfo = getLayerInfo(feature.properties);
+                  var listElement = '<br>' + layerInfo;
+                  for (var l in gDisplayLayersInfo){
+                      // if the information is in the global variable, delete the information
+                      if (listElement === gDisplayLayersInfo[l]){
+                          //disable (comment out)removing of item does not prevent browser GeoJSON error on reselection
+                          gDisplayLayersInfo.splice(l,1);
+                      };
+                  };
+              }
+          });
+        }
+        //launch on selecting a checkbox element.does not relauch after reselction
+        layer.bindPopup(function(e){
+          var popupTemplate = ""
+          console.log(e)
+          for(let key in e.feature.properties){
+            if (e.feature.properties.hasOwnProperty(key)) {
+              if(key.indexOf(".")===-1){
+                popupTemplate+=key+" {"+key+"} <br />"
+              }
+              else{
+                //the json object keys need to be renamed as well.. if the problem with template is about "." in json structure
+                key = key.replace(".","_")
+              }
+              console.log(key + " -> " + e.feature.properties[key]);
+            }
+          }
+          let properties = e.feature.properties
+          return L.Util.template(popupTemplate, properties)
+        });
+
+        //"<span style='color:"+color+";'>"+gtkOverlays[resourceId]+"</span>" = layer
+        //eli objektin jonka resource id:tä sisältää (layer) objectin
+        //This notation could be refactored to use object structure syntax
+        gtkOverlays[gtkLayerNames[resourceId]] = layer
+
+      }//ENDOF FOR
+
+      L.esri.basemapLayer("Gray").addTo(map);
+      L.control.layers(baseLayers,gtkOverlays).addTo(map);
+
+    </script>
+  </body>
+</html>
